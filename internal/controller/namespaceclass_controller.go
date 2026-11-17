@@ -19,12 +19,18 @@ package controller
 import (
 	"context"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	namespaceclassv1 "github.com/cioban/namespaceclass/api/v1"
+)
+
+const (
+	ExpectedLabel = "namespaceclass.cioban.cc/name"
 )
 
 // NamespaceClassReconciler reconciles a NamespaceClass object
@@ -36,20 +42,38 @@ type NamespaceClassReconciler struct {
 // +kubebuilder:rbac:groups=namespaceclass.cioban.cc,resources=namespaceclasses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=namespaceclass.cioban.cc,resources=namespaceclasses/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=namespaceclass.cioban.cc,resources=namespaceclasses/finalizers,verbs=update
+// +kubebuilder:rbac:groups=*,resources=*,verbs=update;create;delete;patch;list;watch;get
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the NamespaceClass object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.25.0/pkg/reconcile
 func (r *NamespaceClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = logf.FromContext(ctx)
+	log := logf.FromContext(ctx)
+	log.Info("Reconciliation loop")
 
-	// TODO(user): your logic here
+	// reconcile namespace obj
+	ns := &corev1.Namespace{}
+	if err := r.Get(ctx, req.NamespacedName, ns); err != nil {
+		log.Error(err, "error retrieving the namespace")
+		return ctrl.Result{}, err
+	} else {
+		return r.NamespaceReconcile(ctx, req, ns)
+	}
+
+	/*
+		nsClass := ns.Labels[ExpectedLabel]
+		log.Info("NSCLASS")
+		log.Info(nsClass)
+
+		return ctrl.Result{}, nil
+	*/
+}
+
+func (r *NamespaceClassReconciler) NamespaceReconcile(ctx context.Context, req ctrl.Request, namespace *corev1.Namespace) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+	log.Info(" - Namespace reconciliation")
+
+	log.Info(namespace.Name)
+	log.Info(namespace.Labels[ExpectedLabel])
 
 	return ctrl.Result{}, nil
 }
@@ -58,6 +82,7 @@ func (r *NamespaceClassReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 func (r *NamespaceClassReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&namespaceclassv1.NamespaceClass{}).
+		Watches(&corev1.Namespace{}, &handler.EnqueueRequestForObject{}).
 		Named("namespaceclass").
 		Complete(r)
 }
