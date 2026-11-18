@@ -4,9 +4,9 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.22.0
-  name: namespaceclasses.namespaceclass.cioban.cc
+  name: namespaceclasses.cioban.cc
 spec:
-  group: namespaceclass.cioban.cc
+  group: cioban.cc
   names:
     kind: NamespaceClass
     listKind: NamespaceClassList

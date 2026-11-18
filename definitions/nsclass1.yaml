@@ -1,0 +1,13 @@
+apiVersion: cioban.cc/v1
+kind: NamespaceClass
+metadata:
+  labels:
+    env: prod
+  name: namespaceclass1
+spec:
+  resources:
+    - apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: configmap-namespaceclass1
+      namespace: default

@@ -19,7 +19,12 @@ package controller
 import (
 	"context"
 
+	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
+
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -55,17 +60,18 @@ func (r *NamespaceClassReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if err := r.Get(ctx, req.NamespacedName, ns); err != nil {
 		log.Error(err, "error retrieving the namespace")
 		return ctrl.Result{}, err
-	} else {
+	}
+
+	if ns != nil {
 		return r.NamespaceReconcile(ctx, req, ns)
 	}
 
-	/*
-		nsClass := ns.Labels[ExpectedLabel]
-		log.Info("NSCLASS")
-		log.Info(nsClass)
+	nsClass := ns.Labels[ExpectedLabel]
+	log.Info("NSCLASS")
+	log.Info(nsClass)
 
-		return ctrl.Result{}, nil
-	*/
+	return ctrl.Result{}, nil
+
 }
 
 func (r *NamespaceClassReconciler) NamespaceReconcile(ctx context.Context, req ctrl.Request, namespace *corev1.Namespace) (ctrl.Result, error) {
@@ -84,5 +90,21 @@ func (r *NamespaceClassReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&namespaceclassv1.NamespaceClass{}).
 		Watches(&corev1.Namespace{}, &handler.EnqueueRequestForObject{}).
 		Named("namespaceclass").
+		// Watching resources owned by the controller
+		Owns(&appsv1.Deployment{}).
+		Owns(&appsv1.StatefulSet{}).
+		Owns(&appsv1.DaemonSet{}).
+		Owns(&corev1.Pod{}).
+		Owns(&batchv1.Job{}).
+		Owns(&batchv1.CronJob{}).
+		Owns(&corev1.Service{}).
+		Owns(&networkingv1.Ingress{}).
+		Owns(&networkingv1.NetworkPolicy{}).
+		Owns(&corev1.ConfigMap{}).
+		Owns(&corev1.Secret{}).
+		Owns(&corev1.PersistentVolumeClaim{}).
+		Owns(&corev1.ServiceAccount{}).
+		Owns(&rbacv1.Role{}).
+		Owns(&rbacv1.RoleBinding{}).
 		Complete(r)
 }
