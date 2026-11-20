@@ -19,19 +19,14 @@ package controller
 import (
 	"context"
 	"encoding/json"
-
-	corev1 "k8s.io/api/core/v1"
-	networkingv1 "k8s.io/api/networking/v1"
-	//rbacv1 "k8s.io/api/rbac/v1"
-	//metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	//appsv1 "k8s.io/api/apps/v1"
-	//batchv1 "k8s.io/api/batch/v1"
-
 	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	//"k8s.io/client-go/discovery"
+	namespaceclassv1 "github.com/cioban/namespaceclass/api/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -40,8 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	loglib "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
-
-	namespaceclassv1 "github.com/cioban/namespaceclass/api/v1"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 const (
@@ -86,11 +80,13 @@ func (r *NamespaceClassReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		log.Error(err, "error retrieving the namespaceclass")
 		return ctrl.Result{}, err
 	}
-	if ns != nil {
+	if nsclass != nil {
 		log.Info("NSCLASS")
-		return ctrl.Result{}, nil
-		//	return r.NamespaceReconcile(ctx, req, ns, &log)
+		return r.NamespaceClassReconcile(ctx, req, nsclass, &log)
 	}
+
+	//TODO: Reconcile objects owned my the controller. i.e. If the controller detects a change in a configmap it should reconcile with the desired spec in the NSCLASS
+	//TODO: Manage nsclass changes. Deal with resources cleanup, resource deletion, etc
 
 	return ctrl.Result{}, nil
 }
@@ -132,8 +128,7 @@ func (r *NamespaceClassReconciler) NamespaceReconcile(ctx context.Context, req c
 			log.Error(err, "Error loading resouce object")
 			return ctrl.Result{}, err
 		}
-		u.SetNamespace(namespace.Name)
-		if err := r.CreateOrUpdateResource(ctx, nsclass, u, log); err != nil {
+		if err := r.CreateOrUpdateResource(ctx, nsclass, namespace, u, log); err != nil {
 			log.Error(err, "Error Creating/Updating resource")
 		}
 
@@ -142,29 +137,34 @@ func (r *NamespaceClassReconciler) NamespaceReconcile(ctx context.Context, req c
 	return ctrl.Result{}, nil
 }
 
-func (r *NamespaceClassReconciler) CreateOrUpdateResource(ctx context.Context, nsclass *namespaceclassv1.NamespaceClass, resource *unstructured.Unstructured, log *logr.Logger) error {
+func (r *NamespaceClassReconciler) CreateOrUpdateResource(ctx context.Context, nsclass *namespaceclassv1.NamespaceClass, namespace *corev1.Namespace, resource *unstructured.Unstructured, log *logr.Logger) error {
 	liveResource := resource.DeepCopy()
 	errR := r.Get(ctx, types.NamespacedName{
 		Name:      resource.GetName(),
-		Namespace: resource.GetNamespace(),
+		Namespace: namespace.Name,
 	}, liveResource)
 	if errR != nil && !apierrors.IsNotFound(errR) {
 		log.Error(errR, "Failed to get current resource", "resource", resource)
 		return errR
 	}
 
-	if err := controllerutil.SetControllerReference(nsclass, resource, r.Scheme); err != nil {
-		return err
-	}
+	// Ignoring any namespace set in the NSCLASS ersource metadata and setting the NS
+	resource.SetNamespace(namespace.Name)
+
+	// Setting the object labels as the same as the namespace
+	resource.SetLabels(namespace.Labels)
 
 	if apierrors.IsNotFound(errR) {
 		log.Info(" >> Creating NS resource", "resource", resource)
+		if err := controllerutil.SetControllerReference(nsclass, resource, r.Scheme); err != nil {
+			return err
+		}
+
 		return r.Create(ctx, resource)
 	}
 
 	if resource != liveResource {
 		liveResource = resource
-
 		log.Info(" >> Updating NS resource", "resource", resource)
 		return r.Update(ctx, liveResource)
 	}
@@ -192,10 +192,34 @@ func (r *NamespaceClassReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		}).
 		Watches(&corev1.Namespace{}, &handler.EnqueueRequestForObject{}, builder.WithPredicates(
 			predicate.Or(predicate.GenerationChangedPredicate{}, predicate.LabelChangedPredicate{}))).
+		Watches(&namespaceclassv1.NamespaceClass{},
+			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
+				log := loglib.FromContext(ctx)
+				log.Info("- NamespaceClass UPDATE, seting namespaces for reconciliation", "namespaceclass", obj.GetName())
+				namespaceList := &corev1.NamespaceList{}
+				if err := r.List(ctx, namespaceList); err != nil {
+					log.Error(err, "Error listing namespaces")
+					return nil
+				}
+
+				var requests []reconcile.Request
+				for _, namespace := range namespaceList.Items {
+					if namespace.Labels[ExpectedLabel] == obj.GetName() {
+						requests = append(requests, reconcile.Request{
+							NamespacedName: types.NamespacedName{
+								Namespace: "",
+								Name:      namespace.Name,
+							},
+						})
+					}
+				}
+				return requests
+			}),
+		).
 		Named("namespaceclass").
 		// Watching resources owned by the controller
-		// For this example, the controller only supports reconciliation in Networkpolicy and serviceaccounts
-		Owns(&networkingv1.NetworkPolicy{}).
+		// For this example, the controller only supports reconciliation of Configmaps and serviceaccounts
+		Owns(&corev1.ConfigMap{}).
 		Owns(&corev1.ServiceAccount{}).
 		Complete(r)
 }

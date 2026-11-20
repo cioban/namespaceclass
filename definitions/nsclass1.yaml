@@ -10,4 +10,10 @@ spec:
       kind: ConfigMap
       metadata:
         name: configmap-namespaceclass1
-      namespace: default
+        namespace: default
+      data:
+        test: 2
+    - apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: sa-namespaceclass1
