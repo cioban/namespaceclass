@@ -5,7 +5,7 @@ metadata:
     env: prod
   name: namespaceclass1
 spec:
-  resources:
+  namespaceresources:
     - apiVersion: v1
       kind: ConfigMap
       metadata:
