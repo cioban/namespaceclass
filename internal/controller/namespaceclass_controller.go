@@ -219,6 +219,7 @@ func (r *NamespaceClassReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Named("namespaceclass").
 		// Watching resources owned by the controller
 		// For this example, the controller only supports reconciliation of Configmaps and serviceaccounts
+		// TODO: Add support to more object kinds owned by the controller. I didn't find a way to make Owns() dynamic
 		Owns(&corev1.ConfigMap{}).
 		Owns(&corev1.ServiceAccount{}).
 		Complete(r)
