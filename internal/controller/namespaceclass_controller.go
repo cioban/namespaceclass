@@ -19,13 +19,14 @@ package controller
 import (
 	"context"
 	"encoding/json"
+
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	//"k8s.io/client-go/discovery"
+
 	namespaceclassv1 "github.com/cioban/namespaceclass/api/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -60,33 +61,24 @@ func (r *NamespaceClassReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	// reconcile namespace obj
 	ns := &corev1.Namespace{}
-	if err := r.Get(ctx, req.NamespacedName, ns); err != nil {
-		if apierrors.IsNotFound(err) {
-			return ctrl.Result{}, nil
-		}
+	if err := r.Get(ctx, req.NamespacedName, ns); err == nil {
+		return r.NamespaceReconcile(ctx, req, ns, &log)
+	} else if !apierrors.IsNotFound(err) {
 		log.Error(err, "error retrieving the namespace")
 		return ctrl.Result{}, err
-	}
-	if ns != nil {
-		return r.NamespaceReconcile(ctx, req, ns, &log)
 	}
 
 	// reconcile namespaceclass obj
 	nsclass := &namespaceclassv1.NamespaceClass{}
-	if err := r.Get(ctx, req.NamespacedName, nsclass); err != nil {
-		if apierrors.IsNotFound(err) {
-			return ctrl.Result{}, nil
-		}
+	if err := r.Get(ctx, req.NamespacedName, nsclass); err == nil {
+		return r.NamespaceClassReconcile(ctx, req, nsclass, &log)
+	} else if !apierrors.IsNotFound(err) {
 		log.Error(err, "error retrieving the namespaceclass")
 		return ctrl.Result{}, err
 	}
-	if nsclass != nil {
-		log.Info("NSCLASS")
-		return r.NamespaceClassReconcile(ctx, req, nsclass, &log)
-	}
 
-	//TODO: Reconcile objects owned my the controller. i.e. If the controller detects a change in a configmap it should reconcile with the desired spec in the NSCLASS
-	//TODO: Manage nsclass changes. Deal with resources cleanup, resource deletion, etc
+	// TODO: Reconcile objects owned my the controller. i.e. If the controller detects a change in a configmap it should reconcile with the desired spec in the NSCLASS
+	// TODO: Manage nsclass changes. Deal with resources cleanup, resource deletion, etc
 
 	return ctrl.Result{}, nil
 }
@@ -125,7 +117,7 @@ func (r *NamespaceClassReconciler) NamespaceReconcile(ctx context.Context, req c
 	for _, resource := range nsclass.Spec.NamespaceResources {
 		u := &unstructured.Unstructured{}
 		if err := json.Unmarshal(resource.Raw, &u.Object); err != nil {
-			log.Error(err, "Error loading resouce object")
+			log.Error(err, "Error loading resource object")
 			return ctrl.Result{}, err
 		}
 		if err := r.CreateOrUpdateResource(ctx, nsclass, namespace, u, log); err != nil {
